@@ -1,0 +1,6 @@
+torch
+jsonlines
+accelerate
+evaluate
+transformers
+scikit-learn
