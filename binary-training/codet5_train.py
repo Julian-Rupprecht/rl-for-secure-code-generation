@@ -165,8 +165,8 @@ def main():
     tokenizer = RobertaTokenizer.from_pretrained('Salesforce/codet5-base')
 
     train_samples, train_labels = processDataset(DEVIGN_TRAIN_DATASET_PATH)
-    test_samples, test_labels = processDataset(DEVIGN_VALID_DATASET_PATH)
-    eval_samples, valid_labels = processDataset(DEVIGN_TEST_DATASET_PATH)
+    test_samples, test_labels = processDataset(DEVIGN_TEST_DATASET_PATH)
+    eval_samples, valid_labels = processDataset(DEVIGN_VALID_DATASET_PATH)
 
     train_tokens = tokenizer(train_samples, padding=True, truncation=True, max_length=510, return_tensors="pt", verbose=True)
     test_tokens = tokenizer(test_samples, padding=True, truncation=True, max_length=510, return_tensors="pt", verbose=True)
