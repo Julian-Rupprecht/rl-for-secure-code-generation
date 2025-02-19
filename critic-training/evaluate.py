@@ -1,5 +1,7 @@
-from constants import BINARY_CRITIC_PREDICTIONS_PATH, DEVIGN_TEST_DATASET_PATH
+import argparse
 import jsonlines
+
+parser = argparse.ArgumentParser()
 
 def get_Labels(labels_path):
     labels = []
@@ -21,13 +23,21 @@ def get_Predictions(predictions_path):
 
 def main():
 
-    predictions_path = BINARY_CRITIC_PREDICTIONS_PATH
-    labels_path = DEVIGN_TEST_DATASET_PATH
+    parser.add_argument("--pred_path", required=True,
+                    help="The path to previous model predictions")
+    parser.add_argument("--labels_path", required=True,
+                    help="The path to previous model predictions")
+
+    args = parser.parse_args()
+
+    predictions_path = args.pred_path
+    labels_path = args.labels_path
 
     predictions = get_Predictions(predictions_path)
     labels = get_Labels(labels_path)
-
+    
     total = len(predictions)
+
     i = 0
     for a, p in zip(labels, predictions):
         if a == p:
@@ -35,6 +45,7 @@ def main():
 
     accuracy = i / total
     print(f" accuracy: {accuracy}")
+
 
 if __name__ == "__main__":
     main()

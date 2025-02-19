@@ -1,14 +1,15 @@
-from constants import BINARY_MODEL_OUTPUT_PATH_TO, BINARY_CRITIC_CONFIG_PATH, BINARY_CRITIC_MODEL_PATH, DEVIGN_TRAIN_DATASET_PATH, DEVIGN_TEST_DATASET_PATH, DEVIGN_VALID_DATASET_PATH
+import os
+import argparse
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import RobertaTokenizer, T5ForConditionalGeneration, T5Config, T5ForSequenceClassification, AdamW, get_linear_schedule_with_warmup
+from transformers import RobertaTokenizerFast, RobertaTokenizer, T5ForConditionalGeneration, T5Config, T5ForSequenceClassification, AdamW, get_linear_schedule_with_warmup
 import numpy as np
 import jsonlines
 import logging
 from model import Model
 
 logger = logging.getLogger(__name__)
-
+parser = argparse.ArgumentParser()
 
 def processDataset(path):
     with jsonlines.open(path, mode="r") as file:
@@ -42,7 +43,7 @@ def train(model, device, num_epochs, train_dl, eval_dl, checkpoint_path):
     num_training_steps = num_epochs * len(train_dl)
     num_warmup_steps = num_training_steps * 0.05
 
-    optimizer = AdamW(model.parameters(), lr=5e-5, eps=1e-8)
+    optimizer = AdamW(model.parameters(), lr=3e-4, eps=1e-8)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps)
     
     best_accuracy = 0.0
@@ -65,14 +66,14 @@ def train(model, device, num_epochs, train_dl, eval_dl, checkpoint_path):
             model.train()
             loss, probs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             
-            optimizer.zero_grad() # Sets gradients to zero so they dont accumulate after each pass
             loss.backward() 
             optimizer.step() # Adjusts weights:
+            optimizer.zero_grad() # Sets gradients to zero so they dont accumulate after each pass
             scheduler.step() # Adjusts learning rate for next iteration
 
             training_iteration += 1
             training_loss += loss.item()
-  
+             
         avg_loss = round(training_loss / training_iteration, 5)
         logger.info(f" Average loss of epoch {epoch} = {avg_loss}")
 
@@ -111,7 +112,7 @@ def evaluate(model, device, eval_dl):
             eval_loss += loss.mean().item()
             logits.append(probs.cpu().numpy())
             labels.append(label.cpu().numpy())
-      
+        
     logits=np.concatenate(logits, 0)
     labels=np.concatenate(labels, 0)
 
@@ -137,6 +138,7 @@ def test(checkpoint_path, model, device, test_dl):
     model.load_state_dict(torch.load(model_load_path, weights_only=True))
     model.to(device)
 
+    model.eval()
     logits = []
 
     for batch in test_dl:
@@ -146,39 +148,67 @@ def test(checkpoint_path, model, device, test_dl):
 
             probs = model(input_ids, attention_mask)
             logits.append(probs.cpu().numpy())
-       
+  
     logits = np.concatenate(logits, 0)
     predictions = logits[:, 0] > 0.5
 
     with open(predictions_path, "w") as file:
         for pred in predictions: 
             file.writelines('1\n') if pred == True else file.writelines('0\n')
-
+        logger.info(f" Model predictions were saved to {predictions_path}")
     
 def main():
     
-    config = T5Config.from_json_file(BINARY_CRITIC_CONFIG_PATH)
+    parser.add_argument("--output_path", required=True, 
+                        help="The path to save the model checkpoint and predictions")
+    parser.add_argument("--num_epochs", default=5, type=int, 
+                        help="The amount of epochs for training")
+    parser.add_argument("--batch_size", default=32, type=int,
+                        help="The size of batches")
+    parser.add_argument("--train_data_path", required=True, 
+                        help="The path to the file containing the training data")
+    parser.add_argument("--eval_data_path", required=True, 
+                        help="The path to the file containing the evaluation data")
+    parser.add_argument("--test_data_path", required=True, 
+                        help="The path to the file containing the test data")
+    parser.add_argument("--model_path", required=True,
+                        help="The path from which the model is loaded")
+    parser.add_argument("--config_path", required=True,
+                    help="The path of the config to instantiate the model")
 
-    model = T5ForSequenceClassification.from_pretrained(BINARY_CRITIC_MODEL_PATH, config=config)
+    args = parser.parse_args()
+
+    checkpoint_path = args.output_path
+    num_epochs = args.num_epochs
+    batch_size = args.batch_size
+    train_data_path = args.train_data_path
+    eval_data_path = args.eval_data_path
+    test_data_path = args.test_data_path
+    model_path = args.model_path
+    config_path = args.config_path
+
+    config = T5Config.from_json_file(config_path)
+
+    model = T5ForSequenceClassification.from_pretrained(model_path, config=config)
     model = Model(model, config)
 
-    tokenizer = RobertaTokenizer.from_pretrained('Salesforce/codet5-base')
+    tokenizer = RobertaTokenizerFast.from_pretrained('Salesforce/codet5-base')
 
-    train_samples, train_labels = processDataset(DEVIGN_TRAIN_DATASET_PATH)
-    test_samples, test_labels = processDataset(DEVIGN_TEST_DATASET_PATH)
-    eval_samples, valid_labels = processDataset(DEVIGN_VALID_DATASET_PATH)
+    train_samples, train_labels = processDataset(train_data_path)
+    test_samples, test_labels = processDataset(test_data_path)
+    eval_samples, valid_labels = processDataset(eval_data_path)
 
-    train_tokens = tokenizer(train_samples, padding=True, truncation=True, max_length=510, return_tensors="pt", verbose=True)
-    test_tokens = tokenizer(test_samples, padding=True, truncation=True, max_length=510, return_tensors="pt", verbose=True)
-    eval_tokens = tokenizer(eval_samples, padding=True, truncation=True, max_length=510, return_tensors="pt", verbose=True)
+    train_tokens = tokenizer(train_samples, padding=True, truncation=True, max_length=512, return_tensors="pt", verbose=True)
+    test_tokens = tokenizer(test_samples, padding=True, truncation=True, max_length=512, return_tensors="pt", verbose=True)
+    eval_tokens = tokenizer(eval_samples, padding=True, truncation=True, max_length=512, return_tensors="pt", verbose=True)
 
     train_ds = DevignDataset(train_tokens, train_labels)
     test_ds = DevignDataset(test_tokens, test_labels)
     eval_ds = DevignDataset(eval_tokens, valid_labels)
 
-    train_dl = DataLoader(train_ds, batch_size=32, shuffle=True)
-    test_dl = DataLoader(test_ds, batch_size=16, shuffle=False)
-    eval_dl = DataLoader(eval_ds, batch_size=16, shuffle=True)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
+    eval_dl = DataLoader(eval_ds, batch_size=batch_size, shuffle=True)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     num_epochs = 5
@@ -193,7 +223,12 @@ def main():
     logger.info(f" input_tokens: {tokenizer.decode(train_tokens['input_ids'][0]).split()}")
     logger.info(f" input_ids: {train_tokens['input_ids'][0]}")
 
-    checkpoint_path = f"{BINARY_MODEL_OUTPUT_PATH_TO}/run1"
+    try: 
+        os.mkdir(checkpoint_path)
+        logger.info(f" Created folder at {checkpoint_path}")
+    except Exception as e:
+        logger.info(f" {e}")
+
     train(model, device, num_epochs, train_dl, eval_dl, checkpoint_path)
     
     result = evaluate(model, device, eval_dl)
