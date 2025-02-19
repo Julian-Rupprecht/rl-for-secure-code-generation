@@ -6,10 +6,13 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.model = model
         self.config = config
-    
+        #self.dropout = nn.Dropout(0.1)
+
     def forward(self, input_ids, attention_mask, labels=None): 
         outputs = self.model(input_ids, attention_mask=attention_mask)[0]
 
+        #outputs = self.dropout(outputs)
+        
         probs = torch.sigmoid(outputs)
         if labels is not None: 
             labels = labels.unsqueeze(1).float()
@@ -18,4 +21,3 @@ class Model(nn.Module):
             return loss, probs
         else: 
             return probs
-        
