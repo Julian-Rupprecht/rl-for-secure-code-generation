@@ -1,4 +1,4 @@
-# Reinformcement Learning Reward Model for Secure Code Generation
+# Reinforcement Learning Reward Model for Secure Code Generation
 
 ## Models
 + [Actor](https://huggingface.co/Salesforce/codet5-large)
